@@ -33,13 +33,13 @@ void setup() {
 void loop() {
   
   delay(50);
- 
-  threshold = 75;
+  pot_value = analogRead(POT_PIN);
+  threshold = map (pot_value, 0, 1023, 25, 100);
 
   distance = sonar.ping_cm();
   if ( distance > 0 && distance < threshold) {
     digitalWrite (LED_PIN, HIGH);
-    Serial.println("TRIGGERED");
+    Serial.print("TRIGGERED");
     delay(2000);
     digitalWrite(LED_PIN, LOW);
   }
