@@ -1,11 +1,14 @@
-//TODO: Some comments here which describe what this sketch does, what is expected to be connected and how
-// is communications.
-
+// Arduino sketch to control a Raspberry Pi, via Serial communication, which has an IR camera.
+// The Arduino uses a pulsed IR beam and an ultrasonic distance detector to know when to take the photo.
 
 #include <NewPing.h>
+#include <IRremote.h>
 
 
 // Pin Definitions:
+
+#define IR_BEAM_PIN 3        // IR Beam LED
+#define IR_BEAM_DETECT_PIN 2    // IR Beam Detector
 #define ECHO_PIN     7  // Arduino pin tied to echo pin on the ultrasonic sensor.
 #define TRIGGER_PIN  8  // Arduino pin tied to trigger pin on the ultrasonic sensor.
 #define LED_PIN 12 // Connected to LED
@@ -19,16 +22,19 @@
 #define SHUTDOWN_VOLTAGE  11.7   // Shutdown if voltage less than 11.7V
 #define VOLTAGE_DIVIDER_FACTOR 4.0
 #define VOLTAGE_READ_PERIOD 60000  // Update voltage every minute
-
+#define TRIGGER_DELAY_TIME 10000  // Wait 10 seconds after triggering
 
 NewPing sonar(TRIGGER_PIN, ECHO_PIN, MAX_DISTANCE);
+IRsend irsend;
 
 int distance;
+int base_distance;
 int threshold;
 int pot_value;
 
 long unsigned int next_voltage_read = 0;
 
+bool ready_to_trigger = false;
 
 void setup() {
   Serial.begin(9600);
@@ -43,44 +49,67 @@ void setup() {
   pinMode(BUTTON_PIN, INPUT);
   digitalWrite(BUTTON_PIN, HIGH);
 
+  pinMode(IR_BEAM_DETECT_PIN, INPUT);
+  irsend.enableIROut(38);
+  irsend.mark(0);
   readVoltage();
 }
 
 void loop() {
 
 
-  delay(50);
-
+  // Update the voltage every minute:
   readVoltage();
 
 
   pot_value = analogRead(POT_PIN);
-  threshold = map (pot_value, 0, 1023, 10, 150);
+  threshold = map (pot_value, 0, 1023, 0, 10);
 
-  distance = sonar.ping_cm();
-  if ( distance > 0 && distance < threshold) {
-    digitalWrite (LED_PIN, HIGH);
-    Serial.println("TRIGGERED");
-    delay(2000);
-    digitalWrite(LED_PIN, LOW);
-  }
+  if ( ready_to_trigger ) {
+    distance = sonar.ping_cm();
 
-  // Check if the "shutdown" pin has been pressed and held for three seconds:
-  if ( digitalRead(BUTTON_PIN) == LOW ) {
-    delay(BUTTON_HOLD_TIME);
-    if ( digitalRead(BUTTON_PIN) == LOW ) {
-      // Send "SHUTDOWN" message to the Pi
-      Serial.println("SHUTDOWN");
-      // Flash LED several times:
-      for ( int i = 0; i < 10; i++ ) {
-        digitalWrite(LED_PIN, HIGH);
-        delay(500);
-        digitalWrite(LED_PIN, LOW);
-        delay(500);
-
-      }
+    if ( distance > 0 && (distance < ( base_distance - threshold )) ) {
+      triggerCamera();
     }
 
+    if ( digitalRead(IR_BEAM_DETECT_PIN) == HIGH ) {
+      triggerCamera();
+    }
+  }
+
+
+  // Check for push button presses:
+  if ( digitalRead(BUTTON_PIN) == LOW ) {
+    delay(100); // Slight debounce delay:
+    if ( digitalRead(BUTTON_PIN) == LOW ) {
+      ready_to_trigger = true;
+
+      // record the base distance:
+      base_distance = sonar.ping_cm();
+      for ( int i = 0; i < 4; i++ ) {
+          digitalWrite(LED_PIN, HIGH);
+          delay(50);
+          digitalWrite(LED_PIN, LOW);
+          delay(50);
+
+        }
+      
+
+      // Check if the "shutdown" pin has been pressed and held for three seconds:
+      delay(BUTTON_HOLD_TIME);
+      if ( digitalRead(BUTTON_PIN) == LOW ) {
+        // Send "SHUTDOWN" message to the Pi
+        Serial.println("SHUTDOWN");
+        // Flash LED several times:
+        for ( int i = 0; i < 10; i++ ) {
+          digitalWrite(LED_PIN, HIGH);
+          delay(500);
+          digitalWrite(LED_PIN, LOW);
+          delay(500);
+
+        }
+      }
+    }
   }
 }
 
@@ -107,7 +136,15 @@ void readVoltage()
 
 }
 
+void triggerCamera() {
 
+  digitalWrite (LED_PIN, HIGH);
+  Serial.println("TRIGGERED");
+  delay(TRIGGER_DELAY_TIME);
+  digitalWrite(LED_PIN, LOW);
+
+
+}
 
 
 
